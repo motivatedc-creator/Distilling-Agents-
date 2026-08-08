@@ -69,7 +69,7 @@ def test_graph_stops_after_second_identical_failure_signature(buggy_repo: Path) 
     assert result.status == "blocked"
     assert result.attempts == 2
     assert worker.calls == 2
-    assert "repeated failure signature" in result.error_log
+    assert "repeated failure signature" in result.error_log.lower()
 
 
 def test_graph_feeds_patch_validation_error_into_retry(buggy_repo: Path) -> None:
