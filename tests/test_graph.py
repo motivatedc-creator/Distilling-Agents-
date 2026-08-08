@@ -57,7 +57,7 @@ def test_graph_retries_failed_patch_and_returns_passing_diff(buggy_repo: Path) -
     assert worker.calls == 2
 
 
-def test_graph_stops_after_attempt_budget(buggy_repo: Path) -> None:
+def test_graph_stops_after_second_identical_failure_signature(buggy_repo: Path) -> None:
     worker = SequenceWorker([BAD_PATCH, BAD_PATCH, BAD_PATCH])
     result = run_agent(
         worker=worker,
@@ -67,8 +67,9 @@ def test_graph_stops_after_attempt_budget(buggy_repo: Path) -> None:
         max_attempts=3,
     )
     assert result.status == "blocked"
-    assert result.attempts == 3
-    assert worker.calls == 3
+    assert result.attempts == 2
+    assert worker.calls == 2
+    assert "repeated failure signature" in result.error_log
 
 
 def test_graph_feeds_patch_validation_error_into_retry(buggy_repo: Path) -> None:
