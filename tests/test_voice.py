@@ -83,6 +83,18 @@ def test_stale_existing_output_is_not_accepted_as_fresh_synthesis(tmp_path: Path
     assert not output.exists()
 
 
+def test_invalid_output_directory_returns_unavailable(tmp_path: Path) -> None:
+    output_dir = tmp_path / "not-a-directory"
+    output_dir.write_text("occupied")
+
+    result = OmniVoiceAdapter(VoiceConfig(output_dir=output_dir), runner=FakeRunner()).synthesize(
+        "سلام"
+    )
+
+    assert result.status == "unavailable"
+    assert "output" in result.diagnostic.lower()
+
+
 def test_timeout_returns_unavailable(tmp_path: Path) -> None:
     def timeout_runner(args, **kwargs):
         raise subprocess.TimeoutExpired(args, timeout=1)
