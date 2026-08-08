@@ -56,7 +56,7 @@ def build_context(
     issue: str = "",
     failure_feedback: str = "",
     max_files: int = 4,
-    max_total_chars: int = 16_000,
+    max_total_chars: int = 10_500,
 ) -> ContextPack:
     """Build a deterministic, issue-focused context pack with a hard character budget."""
 
@@ -71,12 +71,12 @@ def build_context(
         if Path(path).suffix.lower() in _TEXT_SUFFIXES
         and not any(part.startswith(".") for part in Path(path).parts)
     ]
-    query = f"{issue}\n{failure_feedback[:4_000]}"
+    query = f"{issue[:3_000]}\n{failure_feedback[:3_000]}"
     keywords = _keywords(query)
 
     ranked: list[tuple[int, str, str]] = []
     for path in tracked:
-        body = read_file(repo, path, max_chars=min(12_000, max_total_chars))
+        body = read_file(repo, path, max_chars=min(10_500, max_total_chars))
         ranked.append((_score_file(path, body, keywords), path, body))
 
     ranked.sort(key=lambda item: (-item[0], item[1]))
@@ -102,7 +102,7 @@ def build_context(
 
     text = "".join(chunks)[:max_total_chars]
     # Rough planning estimate only. Exact Qwen token counts should come from the
-    # actual serving tokenizer/usage telemetry during benchmark instrumentation.
+    # serving tokenizer/usage telemetry during benchmark instrumentation.
     approximate_tokens = (len(text) + 2) // 3
     return ContextPack(
         text=text,
