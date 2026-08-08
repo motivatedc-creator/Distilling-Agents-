@@ -7,14 +7,31 @@ from langgraph.graph import END, START, StateGraph
 
 from .context import build_context
 from .models import AgentResult, AgentState
-from .tools import apply_patch, git_diff, reset_worktree, run_tests, validate_patch
+from .tools import (
+    apply_patch,
+    failure_fingerprint,
+    git_diff,
+    reset_worktree,
+    run_tests,
+    validate_patch,
+)
 from .worker import PatchWorker
 
 
 def build_graph(worker: PatchWorker):
     def retrieve_context(state: AgentState) -> AgentState:
         repo = Path(state["worktree_path"])
-        return {"context": build_context(repo)}
+        pack = build_context(
+            repo,
+            issue=state["issue_description"],
+            failure_feedback=state.get("error_log", ""),
+        )
+        return {
+            "context": pack.text,
+            "context_files": list(pack.files),
+            "context_chars": pack.char_count,
+            "approximate_context_tokens": pack.approximate_tokens,
+        }
 
     def generate_patch(state: AgentState) -> AgentState:
         attempt = state.get("attempts", 0) + 1
@@ -34,7 +51,12 @@ def build_graph(worker: PatchWorker):
         }
 
     def validate_generated_patch(state: AgentState) -> AgentState:
-        valid, error = validate_patch(Path(state["worktree_path"]), state["patch"])
+        allowed = set(state.get("context_files", []))
+        valid, error = validate_patch(
+            Path(state["worktree_path"]),
+            state["patch"],
+            allowed_paths=allowed,
+        )
         update: AgentState = {"patch_valid": valid, "validation_error": error}
         if not valid:
             update["error_log"] = (
@@ -44,7 +66,8 @@ def build_graph(worker: PatchWorker):
 
     def apply_and_test(state: AgentState) -> AgentState:
         repo = Path(state["worktree_path"])
-        apply_patch(repo, state["patch"])
+        allowed = set(state.get("context_files", []))
+        apply_patch(repo, state["patch"], allowed_paths=allowed)
         result, output = run_tests(repo, state["test_command"])
         if result == "pass":
             return {
@@ -52,13 +75,25 @@ def build_graph(worker: PatchWorker):
                 "error_log": output,
                 "final_diff": git_diff(repo),
                 "status": "passed",
+                "repeated_failure_count": 0,
             }
 
+        fingerprint = failure_fingerprint(result, output)
+        previous = state.get("failure_fingerprint", "")
+        repeated = state.get("repeated_failure_count", 0) + 1 if fingerprint == previous else 1
         failed_diff = git_diff(repo)
         reset_worktree(repo)
+
+        repeat_note = ""
+        if repeated >= 2:
+            repeat_note = f"REPEATED FAILURE SIGNATURE: {fingerprint}\n\n"
         return {
             "test_result": result,
-            "error_log": f"TEST RESULT: {result}\n\n{output}\n\nFAILED PATCH:\n{failed_diff}",
+            "failure_fingerprint": fingerprint,
+            "repeated_failure_count": repeated,
+            "error_log": (
+                f"{repeat_note}TEST RESULT: {result}\n\n{output}\n\nFAILED PATCH:\n{failed_diff}"
+            ),
             "status": "running",
         }
 
@@ -72,6 +107,8 @@ def build_graph(worker: PatchWorker):
     def after_test(state: AgentState) -> Literal["passed", "retrieve_context", "blocked"]:
         if state["test_result"] == "pass":
             return "passed"
+        if state.get("repeated_failure_count", 0) >= 2:
+            return "blocked"
         if state["attempts"] >= state["max_attempts"]:
             return "blocked"
         return "retrieve_context"
@@ -117,11 +154,17 @@ def run_agent(
             "test_command": test_command,
             "max_attempts": max_attempts,
             "attempts": 0,
+            "context": "",
+            "context_files": [],
+            "context_chars": 0,
+            "approximate_context_tokens": 0,
             "patch": "",
             "patch_valid": False,
             "validation_error": "",
             "test_result": "not_run",
             "error_log": "",
+            "failure_fingerprint": "",
+            "repeated_failure_count": 0,
             "final_diff": "",
             "status": "running",
         },
