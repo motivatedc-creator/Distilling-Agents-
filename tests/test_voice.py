@@ -69,6 +69,20 @@ def test_missing_wav_returns_unavailable(tmp_path: Path) -> None:
     assert "wav" in result.diagnostic.lower()
 
 
+def test_stale_existing_output_is_not_accepted_as_fresh_synthesis(tmp_path: Path) -> None:
+    output = tmp_path / "out.wav"
+    output.write_bytes(b"RIFFold-audio")
+    runner = FakeRunner(write_output=False)
+
+    result = OmniVoiceAdapter(VoiceConfig(output_dir=tmp_path), runner=runner).synthesize(
+        "سلام",
+        output_path=output,
+    )
+
+    assert result.status == "unavailable"
+    assert not output.exists()
+
+
 def test_timeout_returns_unavailable(tmp_path: Path) -> None:
     def timeout_runner(args, **kwargs):
         raise subprocess.TimeoutExpired(args, timeout=1)
