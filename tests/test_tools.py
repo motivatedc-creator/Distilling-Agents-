@@ -38,3 +38,16 @@ def test_apply_patch_then_tests_pass(buggy_repo: Path) -> None:
     result, output = run_tests(buggy_repo, ("python", "-m", "pytest", "-q"))
     assert result == "pass", output
     assert "return a + b" in git_diff(buggy_repo)
+
+
+def test_run_tests_truncates_large_failure_output(buggy_repo: Path) -> None:
+    command = (
+        "python",
+        "-c",
+        "import sys; print('x' * 12000); print('TAIL-MARKER', file=sys.stderr); sys.exit(1)",
+    )
+    result, output = run_tests(buggy_repo, command, max_output_chars=2_000)
+    assert result == "fail"
+    assert len(output) <= 2_100
+    assert "<test output truncated>" in output
+    assert "TAIL-MARKER" in output
