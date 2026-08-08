@@ -15,6 +15,13 @@ BAD_PATCH = """diff --git a/calculator.py b/calculator.py
 +    return a * b
 """
 
+INVALID_PATCH = """diff --git a/../escape.txt b/../escape.txt
+--- a/../escape.txt
++++ b/../escape.txt
+@@ -0,0 +1 @@
++nope
+"""
+
 GOOD_PATCH = """diff --git a/calculator.py b/calculator.py
 --- a/calculator.py
 +++ b/calculator.py
@@ -62,3 +69,30 @@ def test_graph_stops_after_attempt_budget(buggy_repo: Path) -> None:
     assert result.status == "blocked"
     assert result.attempts == 3
     assert worker.calls == 3
+
+
+def test_graph_feeds_patch_validation_error_into_retry(buggy_repo: Path) -> None:
+    class FeedbackWorker(SequenceWorker):
+        def __init__(self) -> None:
+            super().__init__([INVALID_PATCH, GOOD_PATCH])
+            self.retry_error_log = ""
+
+        def generate_patch(self, *, issue: str, context: str, error_log: str, attempt: int) -> PatchResponse:
+            if attempt == 2:
+                self.retry_error_log = error_log
+            return super().generate_patch(
+                issue=issue, context=context, error_log=error_log, attempt=attempt
+            )
+
+    worker = FeedbackWorker()
+    result = run_agent(
+        worker=worker,
+        issue_description="add(2, 3) must return 5",
+        worktree_path=buggy_repo,
+        test_command=("python", "-m", "pytest", "-q"),
+        max_attempts=3,
+    )
+    assert result.status == "passed"
+    assert result.attempts == 2
+    assert "PATCH VALIDATION FAILED" in worker.retry_error_log
+    assert "unsafe repository path" in worker.retry_error_log
