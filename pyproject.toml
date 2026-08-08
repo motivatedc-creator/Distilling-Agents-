@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "distilling-agents"
+version = "0.1.0"
+description = "A constrained local coding-agent execution harness for Qwen2.5-Coder served by vLLM."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "langgraph>=0.2,<2",
+  "openai>=1.78,<3",
+  "pydantic>=2.8,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2,<10",
+]
+
+[project.scripts]
+distill-agent = "distilling_agents.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+where = ["src"]
