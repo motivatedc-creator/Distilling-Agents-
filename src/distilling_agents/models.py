@@ -23,12 +23,17 @@ class AgentState(TypedDict, total=False):
     context_chars: int
     approximate_context_tokens: int
     patch: str
+    current_patch_hash: str
+    previous_failed_patch_hash: str
+    repeated_patch: bool
     patch_valid: bool
     validation_error: str
+    generation_failed: bool
+    execution_failed: bool
     test_result: Literal["not_run", "pass", "fail", "timeout"]
     error_log: str
     failure_fingerprint: str
-    repeated_failure_count: int
+    failure_stall: bool
     final_diff: str
     status: Literal["running", "passed", "blocked"]
 
