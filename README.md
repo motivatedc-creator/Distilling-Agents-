@@ -89,7 +89,7 @@ The client uses vLLM's OpenAI-compatible `response_format: json_schema` structur
 
 ## Run a repair
 
-Point the harness at any **Git repository with a deterministic test command**:
+Point the harness at a **Git repository with a deterministic test command and dependencies already available to the process**:
 
 ```bash
 distill-agent /path/to/repo \
