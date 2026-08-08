@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable
+from typing import Iterable, Iterator
 
 
 class ToolError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class TestRun:
+    status: str
+    output: str
+    exit_code: int | None
+
+    def __iter__(self) -> Iterator[str]:
+        # Preserve the existing two-value unpacking API.
+        yield self.status
+        yield self.output
 
 
 def _run(
@@ -95,7 +109,12 @@ def _paths_from_diff(diff_text: str) -> list[str]:
     return paths
 
 
-def validate_patch(repo: Path, diff_text: str) -> tuple[bool, str]:
+def validate_patch(
+    repo: Path,
+    diff_text: str,
+    *,
+    allowed_paths: set[str] | None = None,
+) -> tuple[bool, str]:
     repo = ensure_git_repo(repo)
     if not diff_text.strip():
         return False, "empty diff"
@@ -110,15 +129,25 @@ def validate_patch(repo: Path, diff_text: str) -> tuple[bool, str]:
     except ToolError as exc:
         return False, str(exc)
 
+    if allowed_paths is not None:
+        unexpected = sorted(set(paths) - set(allowed_paths))
+        if unexpected:
+            return False, f"patch touches files outside allowed targets: {', '.join(unexpected)}"
+
     result = _run(["git", "apply", "--check", "--whitespace=error", "-"], cwd=repo, input_text=diff_text)
     if result.returncode != 0:
         return False, result.stderr.strip() or "git apply --check rejected patch"
     return True, ""
 
 
-def apply_patch(repo: Path, diff_text: str) -> None:
+def apply_patch(
+    repo: Path,
+    diff_text: str,
+    *,
+    allowed_paths: set[str] | None = None,
+) -> None:
     repo = ensure_git_repo(repo)
-    valid, error = validate_patch(repo, diff_text)
+    valid, error = validate_patch(repo, diff_text, allowed_paths=allowed_paths)
     if not valid:
         raise ToolError(error)
     result = _run(["git", "apply", "--whitespace=error", "-"], cwd=repo, input_text=diff_text)
@@ -126,18 +155,55 @@ def apply_patch(repo: Path, diff_text: str) -> None:
         raise ToolError(result.stderr.strip() or "git apply failed")
 
 
-def run_tests(repo: Path, command: tuple[str, ...], *, timeout: int = 60) -> tuple[str, str]:
+def _truncate_output(output: str, max_chars: int) -> str:
+    if len(output) <= max_chars:
+        return output
+    marker = "\n<test output truncated>\n"
+    keep = max(0, max_chars - len(marker))
+    return marker + output[-keep:]
+
+
+def run_tests(
+    repo: Path,
+    command: tuple[str, ...],
+    *,
+    timeout: int = 60,
+    max_output_chars: int = 6_000,
+) -> TestRun:
     repo = ensure_git_repo(repo)
     if not command:
         raise ToolError("test command is empty")
+    if max_output_chars < 256:
+        raise ValueError("max_output_chars must be at least 256")
     try:
         result = _run(command, cwd=repo, timeout=timeout)
     except ToolError as exc:
         if "timed out" in str(exc):
-            return "timeout", str(exc)
+            return TestRun("timeout", str(exc), None)
         raise
     output = (result.stdout + "\n" + result.stderr).strip()
-    return ("pass" if result.returncode == 0 else "fail"), output
+    output = _truncate_output(output, max_output_chars)
+    return TestRun("pass" if result.returncode == 0 else "fail", output, result.returncode)
+
+
+def patch_fingerprint(diff_text: str) -> str:
+    normalized = diff_text.strip().replace("\r\n", "\n")
+    return hashlib.sha256(normalized.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def failure_fingerprint(result: str, output: str, exit_code: int | None = None) -> str:
+    """Hash failing test names, exit code, and bounded failure details."""
+
+    salient = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("FAILED ") or stripped.startswith("ERROR ") or stripped.startswith("E "):
+            salient.append(stripped)
+    if not salient:
+        salient = [line.strip() for line in output.splitlines() if line.strip()][:8]
+    stderr_tail = output[-1_000:]
+    payload = f"exit={exit_code}\nresult={result}\n" + "\n".join(salient) + "\n" + stderr_tail
+    return hashlib.sha256(payload.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
 def git_diff(repo: Path) -> str:
