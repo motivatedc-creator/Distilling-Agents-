@@ -35,7 +35,12 @@ def build_graph(worker: PatchWorker):
 
     def validate_generated_patch(state: AgentState) -> AgentState:
         valid, error = validate_patch(Path(state["worktree_path"]), state["patch"])
-        return {"patch_valid": valid, "validation_error": error}
+        update: AgentState = {"patch_valid": valid, "validation_error": error}
+        if not valid:
+            update["error_log"] = (
+                f"PATCH VALIDATION FAILED:\n{error}\n\nREJECTED PATCH:\n{state['patch']}"
+            )
+        return update
 
     def apply_and_test(state: AgentState) -> AgentState:
         repo = Path(state["worktree_path"])
