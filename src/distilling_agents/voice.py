@@ -43,7 +43,6 @@ class OmniVoiceAdapter:
         self.runner = runner
 
     def _new_output_path(self) -> Path:
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
         return self.config.output_dir / f"speech-{uuid.uuid4().hex}.wav"
 
     def _argv(self, text: str, output_path: Path) -> list[str]:
@@ -73,8 +72,8 @@ class OmniVoiceAdapter:
             return VoiceResult("unavailable", diagnostic="voice text is empty")
 
         output = output_path or self._new_output_path()
-        output.parent.mkdir(parents=True, exist_ok=True)
         try:
+            output.parent.mkdir(parents=True, exist_ok=True)
             output.unlink(missing_ok=True)
         except OSError as exc:
             return VoiceResult(
@@ -113,7 +112,14 @@ class OmniVoiceAdapter:
                     f"OmniVoice exited with exit {completed.returncode}: {diagnostics}"
                 ),
             )
-        if not output.is_file() or output.stat().st_size == 0:
+        try:
+            valid_output = output.is_file() and output.stat().st_size > 0
+        except OSError as exc:
+            return VoiceResult(
+                "unavailable",
+                diagnostic=_tail(f"Could not validate voice output: {exc}"),
+            )
+        if not valid_output:
             return VoiceResult(
                 "unavailable",
                 diagnostic="OmniVoice returned success but no non-empty WAV was produced",
