@@ -101,8 +101,8 @@ def build_context(
             break
 
     text = "".join(chunks)[:max_total_chars]
-    # Conservative operational estimate for code-heavy prompts; the real vLLM usage
-    # count is recorded by VLLMWorker after a request completes.
+    # Rough planning estimate only. Exact Qwen token counts should come from the
+    # actual serving tokenizer/usage telemetry during benchmark instrumentation.
     approximate_tokens = (len(text) + 2) // 3
     return ContextPack(
         text=text,
