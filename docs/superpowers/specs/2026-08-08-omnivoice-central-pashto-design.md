@@ -59,7 +59,10 @@ OmniVoice adapter
 isolated OmniVoice environment / process
     |
     v
-WAV output + optional local playback
+WAV output
+    |
+    v
+best-effort local playback
 ```
 
 The voice layer is downstream from the coding result. It is not part of the LangGraph repair decision loop.
@@ -106,7 +109,7 @@ It will not manage CUDA processes, install packages, download models itself, or 
 
 After `run_agent()` returns, the CLI will keep printing the existing technical JSON result exactly as the source of truth.
 
-If voice is enabled, a short human-readable Central Pashto status phrase will then be selected from deterministic templates.
+If voice is enabled, a short human-readable Central Pashto status phrase will then be selected from deterministic templates, synthesized, and played locally on a best-effort basis.
 
 Examples of intended meaning:
 
@@ -123,7 +126,7 @@ V1 will use a small curated set of Pashto status strings instead of adding a tra
 Add a second package script:
 
 ```bash
-distill-speak "ستا سو حال دی"
+distill-speak "سلام، څنګه یې؟"
 ```
 
 Default behavior:
@@ -150,11 +153,21 @@ distill-speak "..." \
 
 The same adapter used by automatic agent speech must back this command. There must not be two independent OmniVoice implementations.
 
-### 5. Optional playback
+### 5. Local playback adapter
 
 Synthesis and playback are separate concerns.
 
-V1 may support a best-effort `--play` option implemented through a small platform adapter, but WAV generation is the required capability. A missing audio player must never cause synthesis to be reported as failed.
+V1 will include a small platform-facing playback adapter. Automatic agent speech will request playback by default. `distill-speak` will expose an explicit `--play` option so it can also be used purely as a WAV generator.
+
+Playback must:
+
+- receive only a harness-controlled WAV path;
+- use a configured or platform-detected local audio player;
+- execute without `shell=True`;
+- return a structured played/unavailable result;
+- never redefine a successful synthesis as failed merely because playback is unavailable.
+
+The manual acceptance test on the target machine must verify that at least one supported playback path produces audible sound.
 
 ## GPU and process policy
 
@@ -178,10 +191,10 @@ For every coding run:
 
 ```text
 coding result = passed or blocked
-voice result  = spoken / skipped / unavailable
+voice result  = spoken / synthesized-only / skipped / unavailable
 ```
 
-The coding result must never change because TTS failed.
+The coding result must never change because TTS or playback failed.
 
 Expected voice failures include:
 
@@ -242,9 +255,9 @@ The voice adapter follows the existing harness philosophy:
 
 ## Testing strategy
 
-Core CI must not require a GPU, OmniVoice, or model download.
+Core CI must not require a GPU, OmniVoice, model download, or real audio device.
 
-Unit tests will use a fake executable/process boundary to verify:
+Unit tests will use fake process/playback boundaries to verify:
 
 1. Central Pashto `pst` is passed by default.
 2. standalone text produces the expected argument vector.
@@ -254,10 +267,11 @@ Unit tests will use a fake executable/process boundary to verify:
 6. missing/empty WAV is rejected.
 7. automatic speech failure does not change an agent `passed` result.
 8. automatic speech failure does not change an agent `blocked` result.
-9. benchmark mode disables automatic speech.
-10. CLI remains backward compatible when voice is disabled.
+9. playback failure preserves a successful synthesis result.
+10. benchmark mode disables automatic speech.
+11. CLI remains backward compatible when voice is disabled.
 
-A local manual acceptance test on the target NVIDIA machine will be required before claiming real Central Pashto synthesis works end-to-end.
+A local manual acceptance test on the target NVIDIA machine will be required before claiming real Central Pashto synthesis and audible playback work end-to-end.
 
 ## Acceptance criteria
 
@@ -266,12 +280,12 @@ V1 is complete when all of the following are true:
 - `distill-speak` exists;
 - Central Pashto (`pst`) is its default language;
 - it can call an isolated OmniVoice installation and produce a non-empty WAV;
-- the main coding CLI can optionally speak a short Central Pashto result summary;
+- the main coding CLI can optionally synthesize and audibly play a short Central Pashto result summary on the target machine;
 - voice cloning inputs can be supplied explicitly;
-- TTS failures never crash or change the coding result;
-- test coverage works in GitHub Actions without GPU/model downloads;
+- TTS/playback failures never crash or change the coding result;
+- test coverage works in GitHub Actions without GPU/model downloads/audio hardware;
 - the 10-bug coding benchmark remains voice-disabled;
-- README documents setup, isolation, expected VRAM contention, and usage;
+- README documents setup, isolation, expected VRAM contention, playback, and usage;
 - no automatic vLLM shutdown/restart logic is included in V1.
 
 ## Future extensions
