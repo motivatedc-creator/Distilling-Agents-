@@ -19,11 +19,16 @@ class AgentState(TypedDict, total=False):
     max_attempts: int
     attempts: int
     context: str
+    context_files: list[str]
+    context_chars: int
+    approximate_context_tokens: int
     patch: str
     patch_valid: bool
     validation_error: str
     test_result: Literal["not_run", "pass", "fail", "timeout"]
     error_log: str
+    failure_fingerprint: str
+    repeated_failure_count: int
     final_diff: str
     status: Literal["running", "passed", "blocked"]
 
