@@ -74,6 +74,14 @@ class OmniVoiceAdapter:
 
         output = output_path or self._new_output_path()
         output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output.unlink(missing_ok=True)
+        except OSError as exc:
+            return VoiceResult(
+                "unavailable",
+                diagnostic=_tail(f"Could not prepare voice output path: {exc}"),
+            )
+
         argv = self._argv(text, output)
 
         try:
