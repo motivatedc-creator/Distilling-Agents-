@@ -21,6 +21,7 @@ dev = [
 
 [project.scripts]
 distill-agent = "distilling_agents.cli:main"
+distill-speak = "distilling_agents.speak:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
