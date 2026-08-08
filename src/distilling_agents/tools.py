@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -95,7 +96,12 @@ def _paths_from_diff(diff_text: str) -> list[str]:
     return paths
 
 
-def validate_patch(repo: Path, diff_text: str) -> tuple[bool, str]:
+def validate_patch(
+    repo: Path,
+    diff_text: str,
+    *,
+    allowed_paths: set[str] | None = None,
+) -> tuple[bool, str]:
     repo = ensure_git_repo(repo)
     if not diff_text.strip():
         return False, "empty diff"
@@ -110,15 +116,25 @@ def validate_patch(repo: Path, diff_text: str) -> tuple[bool, str]:
     except ToolError as exc:
         return False, str(exc)
 
+    if allowed_paths is not None:
+        unexpected = sorted(set(paths) - set(allowed_paths))
+        if unexpected:
+            return False, f"patch touches files outside allowed targets: {', '.join(unexpected)}"
+
     result = _run(["git", "apply", "--check", "--whitespace=error", "-"], cwd=repo, input_text=diff_text)
     if result.returncode != 0:
         return False, result.stderr.strip() or "git apply --check rejected patch"
     return True, ""
 
 
-def apply_patch(repo: Path, diff_text: str) -> None:
+def apply_patch(
+    repo: Path,
+    diff_text: str,
+    *,
+    allowed_paths: set[str] | None = None,
+) -> None:
     repo = ensure_git_repo(repo)
-    valid, error = validate_patch(repo, diff_text)
+    valid, error = validate_patch(repo, diff_text, allowed_paths=allowed_paths)
     if not valid:
         raise ToolError(error)
     result = _run(["git", "apply", "--whitespace=error", "-"], cwd=repo, input_text=diff_text)
@@ -138,6 +154,20 @@ def run_tests(repo: Path, command: tuple[str, ...], *, timeout: int = 60) -> tup
         raise
     output = (result.stdout + "\n" + result.stderr).strip()
     return ("pass" if result.returncode == 0 else "fail"), output
+
+
+def failure_fingerprint(result: str, output: str) -> str:
+    """Create a stable signature from the salient part of a failed test run."""
+
+    salient = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("FAILED ") or stripped.startswith("ERROR ") or stripped.startswith("E "):
+            salient.append(stripped)
+    if not salient:
+        salient = [line.strip() for line in output.splitlines() if line.strip()][:8]
+    payload = f"{result}\n" + "\n".join(salient)
+    return hashlib.sha256(payload[:2_000].encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
 def git_diff(repo: Path) -> str:
