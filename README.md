@@ -99,6 +99,16 @@ distill-agent /path/to/repo \
 
 Successful output contains the final diff. Failed runs stop after the configured attempt budget and return `blocked` rather than looping forever.
 
+## Central Pashto voice
+
+Distilling Agents can optionally synthesize status speech through an isolated OmniVoice installation. Central Pashto (`pst`) is the default language.
+
+```bash
+distill-speak "سلام، څنګه یې؟" --play
+```
+
+The coding harness does not install or import OmniVoice directly. See `docs/voice.md` for WSL2/CUDA setup, voice cloning, playback, and GPU-contention notes. Voice is disabled for the coding benchmark.
+
 ## Current scope
 
 Implemented now:
@@ -110,6 +120,8 @@ Implemented now:
 - deterministic tests
 - retry budget / blocked state
 - unit and integration-style tests using a synthetic buggy repo
+- optional isolated OmniVoice speech adapter with Central Pashto default
+- standalone `distill-speak` command
 - GitHub Actions CI
 
 Not implemented yet:
@@ -121,6 +133,7 @@ Not implemented yet:
 - semantic repo indexing/RAG
 - marketing engine
 - telemetry dashboards
+- automatic GPU model handoff between Qwen and OmniVoice
 
 Those are intentionally postponed until the core repair loop proves reliable.
 
